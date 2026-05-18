@@ -92,21 +92,15 @@ current_year = now.year
 current_month_index = now.month - 1  # 0-based
 
 # ---------------------------------------------------------------------------
-# Barra superior: título + acciones
+# Barra superior: título + botón añadir
 # ---------------------------------------------------------------------------
-col_title, col_actions = st.columns([3, 1])
+col_title, col_actions = st.columns([4, 1])
 with col_title:
     st.title("💰 Gastos del Hogar")
 with col_actions:
     st.markdown("<div style='padding-top:18px'>", unsafe_allow_html=True)
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        if st.button("➕", help="Añadir gasto", use_container_width=True, type="primary"):
-            dialog_add_expense(current_year, current_month_index)
-    with btn_col2:
-        if st.button("🚪", help="Cerrar sesión", use_container_width=True):
-            logout()
-            st.rerun()
+    if st.button("➕ Añadir", help="Añadir gasto", use_container_width=True, type="primary"):
+        dialog_add_expense(current_year, current_month_index)
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("---")
@@ -128,9 +122,9 @@ if df.empty:
 # ---------------------------------------------------------------------------
 # Filtros — selectores en fila, compactos
 # ---------------------------------------------------------------------------
-col_f1, col_f2 = st.columns(2)
 
-with col_f1:
+col_yr, _ = st.columns([1, 2])
+with col_yr:
     available_years = sorted(df["year"].unique())
     default_year_idx = (
         available_years.index(current_year)
@@ -139,16 +133,25 @@ with col_f1:
     )
     selected_year = st.selectbox("📅 Año", available_years, index=default_year_idx)
 
-with col_f2:
-    year_df = df[df["year"] == selected_year]
-    available_months = [m for m in MONTHS if m in year_df["month"].unique()]
-    default_month = MONTHS[current_month_index]
-    default_month_idx = (
-        available_months.index(default_month)
-        if default_month in available_months
-        else 0
-    )
-    selected_month = st.selectbox("🗓️ Mes", available_months, index=default_month_idx)
+# Radio no abre teclado en movil
+st.markdown("")
+
+year_df = df[df["year"] == selected_year]
+available_months = [m for m in MONTHS if m in year_df["month"].unique()]
+default_month = MONTHS[current_month_index]
+default_month_idx = (
+    available_months.index(default_month)
+    if default_month in available_months
+    else 0
+)
+st.markdown("**Mes**")
+selected_month = st.radio(
+    "Mes",
+    available_months,
+    index=default_month_idx,
+    horizontal=True,
+    label_visibility="collapsed",
+)
 
 filtered_df = year_df[year_df["month"] == selected_month]
 
@@ -247,3 +250,28 @@ with tab_data:
 
 with tab_manage_tab:
     tab_manage(filtered_df)
+
+# ---------------------------------------------------------------------------
+# Zona de cierre de sesión — al final de la página, separada visualmente
+# ---------------------------------------------------------------------------
+st.markdown("---")
+st.markdown("""
+<style>
+/* Expander de logout en rojo */
+div[data-testid="stExpander"] details summary p {
+    color: #EF4444 !important;
+    font-weight: 600;
+}
+</style>
+""", unsafe_allow_html=True)
+
+with st.expander("🚪 Cerrar sesión"):
+    st.warning("¿Seguro que quieres cerrar la sesión? Tendrás que volver a introducir tus credenciales.")
+    col_logout, col_cancel = st.columns(2)
+    with col_logout:
+        if st.button("✅ Sí, cerrar sesión", use_container_width=True, type="primary", key="confirm_logout"):
+            logout()
+            st.rerun()
+    with col_cancel:
+        if st.button("❌ Cancelar", use_container_width=True, key="cancel_logout"):
+            st.rerun()
