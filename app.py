@@ -27,11 +27,11 @@ st.set_page_config(
     page_title="Gastos del Hogar",
     layout="wide",
     page_icon="💰",
-    initial_sidebar_state="collapsed",   # sidebar oculto por defecto en móvil
+    initial_sidebar_state="collapsed",
 )
 
 # ---------------------------------------------------------------------------
-# CSS global: corrige selectbox difuminado + mejora móvil
+# CSS global
 # ---------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -50,6 +50,12 @@ li[role="option"][aria-selected="true"] {
     color: #ffffff !important;
 }
 
+/* ── Selectbox: deshabilitar teclado en móvil ────────────────────── */
+div[data-baseweb="select"] input {
+    caret-color: transparent !important;
+    pointer-events: none !important;
+}
+
 /* ── Botón principal: tamaño cómodo para el pulgar ───────────────── */
 div.stButton > button[kind="primary"] {
     min-height: 48px;
@@ -63,7 +69,6 @@ div.stButton > button[kind="primary"] {
         flex: 1 1 100% !important;
         min-width: 100% !important;
     }
-    /* Tabs: texto más pequeño para que quepan en pantalla estrecha */
     button[data-baseweb="tab"] {
         font-size: 0.78rem !important;
         padding: 8px 6px !important;
@@ -74,6 +79,12 @@ div.stButton > button[kind="primary"] {
 div[data-testid="stDialog"] > div {
     max-width: 96vw !important;
     width: 96vw !important;
+}
+
+/* ── Expander cerrar sesión en rojo ──────────────────────────────── */
+div[data-testid="stExpander"] details summary p {
+    color: #EF4444 !important;
+    font-weight: 600;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -110,21 +121,37 @@ st.markdown("---")
 # ---------------------------------------------------------------------------
 df = load_expenses()
 
-# Botón refresco manual (discreto, bajo el título)
 if st.button("🔄 Actualizar datos", type="secondary"):
     load_expenses.clear()
     st.rerun()
+
+# ---------------------------------------------------------------------------
+# Cerrar sesión — siempre visible, independiente de si hay datos
+# ---------------------------------------------------------------------------
+st.markdown("---")
+with st.expander("🚪 Cerrar sesión"):
+    st.warning("¿Seguro que quieres cerrar la sesión? Tendrás que volver a introducir tus credenciales.")
+    col_logout, col_cancel = st.columns(2)
+    with col_logout:
+        if st.button("✅ Sí, cerrar sesión", use_container_width=True, type="primary", key="confirm_logout"):
+            logout()
+            st.rerun()
+    with col_cancel:
+        if st.button("❌ Cancelar", use_container_width=True, key="cancel_logout"):
+            st.rerun()
 
 if df.empty:
     st.info("Aún no hay gastos registrados. Pulsa ➕ para añadir el primero.")
     st.stop()
 
-# ---------------------------------------------------------------------------
-# Filtros — selectores en fila, compactos
-# ---------------------------------------------------------------------------
+st.markdown("---")
 
-col_yr, _ = st.columns([1, 2])
-with col_yr:
+# ---------------------------------------------------------------------------
+# Filtros — ambos selectbox (sin teclado gracias al CSS pointer-events)
+# ---------------------------------------------------------------------------
+col_f1, col_f2 = st.columns(2)
+
+with col_f1:
     available_years = sorted(df["year"].unique())
     default_year_idx = (
         available_years.index(current_year)
@@ -133,25 +160,16 @@ with col_yr:
     )
     selected_year = st.selectbox("📅 Año", available_years, index=default_year_idx)
 
-# Radio no abre teclado en movil
-st.markdown("")
-
-year_df = df[df["year"] == selected_year]
-available_months = [m for m in MONTHS if m in year_df["month"].unique()]
-default_month = MONTHS[current_month_index]
-default_month_idx = (
-    available_months.index(default_month)
-    if default_month in available_months
-    else 0
-)
-st.markdown("**Mes**")
-selected_month = st.radio(
-    "Mes",
-    available_months,
-    index=default_month_idx,
-    horizontal=True,
-    label_visibility="collapsed",
-)
+with col_f2:
+    year_df = df[df["year"] == selected_year]
+    available_months = [m for m in MONTHS if m in year_df["month"].unique()]
+    default_month = MONTHS[current_month_index]
+    default_month_idx = (
+        available_months.index(default_month)
+        if default_month in available_months
+        else 0
+    )
+    selected_month = st.selectbox("🗓️ Mes", available_months, index=default_month_idx)
 
 filtered_df = year_df[year_df["month"] == selected_month]
 
@@ -164,7 +182,7 @@ if prev_month_idx >= 0:
     prev_month_total = float(prev_df["cost"].sum())
 
 # ---------------------------------------------------------------------------
-# KPIs — 2×2 en móvil, 4 en fila en escritorio
+# KPIs — 2x2
 # ---------------------------------------------------------------------------
 st.markdown("### 📈 Resumen")
 
@@ -177,7 +195,6 @@ top_category  = (
 )
 delta_vs_prev = monthly_total - prev_month_total if prev_month_total > 0 else None
 
-# Fila 1
 kpi_r1c1, kpi_r1c2 = st.columns(2)
 kpi_r1c1.metric(
     label=f"Total {selected_month}",
@@ -187,7 +204,6 @@ kpi_r1c1.metric(
 )
 kpi_r1c2.metric(label=f"Acumulado {selected_year}", value=f"{yearly_total:,.2f} €")
 
-# Fila 2
 kpi_r2c1, kpi_r2c2 = st.columns(2)
 kpi_r2c1.metric(label="Media mensual", value=f"{monthly_avg:,.2f} €")
 kpi_r2c2.metric(label="Mayor categoría", value=top_category)
@@ -200,7 +216,6 @@ st.markdown("---")
 tab_charts, tab_data, tab_manage_tab = st.tabs(["📊 Gráficos", "📋 Datos", "⚙️ Gestión"])
 
 with tab_charts:
-    # En móvil los gráficos se apilan (1 columna); en escritorio van en 2 columnas
     c1, c2 = st.columns([1, 1])
     with c1:
         chart_pie(filtered_df, selected_month)
@@ -250,28 +265,3 @@ with tab_data:
 
 with tab_manage_tab:
     tab_manage(filtered_df)
-
-# ---------------------------------------------------------------------------
-# Zona de cierre de sesión — al final de la página, separada visualmente
-# ---------------------------------------------------------------------------
-st.markdown("---")
-st.markdown("""
-<style>
-/* Expander de logout en rojo */
-div[data-testid="stExpander"] details summary p {
-    color: #EF4444 !important;
-    font-weight: 600;
-}
-</style>
-""", unsafe_allow_html=True)
-
-with st.expander("🚪 Cerrar sesión"):
-    st.warning("¿Seguro que quieres cerrar la sesión? Tendrás que volver a introducir tus credenciales.")
-    col_logout, col_cancel = st.columns(2)
-    with col_logout:
-        if st.button("✅ Sí, cerrar sesión", use_container_width=True, type="primary", key="confirm_logout"):
-            logout()
-            st.rerun()
-    with col_cancel:
-        if st.button("❌ Cancelar", use_container_width=True, key="cancel_logout"):
-            st.rerun()
