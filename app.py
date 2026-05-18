@@ -16,16 +16,15 @@ def check_password():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.subheader("🔒 Acceso")
+        st.subheader("🔒 Acceso al Sistema de Gastos")
         input_username = st.text_input("Usuario")
         input_password = st.text_input("Contraseña", type="password")
-
+        
         if st.button("Iniciar Sesión"):
-            # Reading credentials securely from Streamlit Cloud Secrets
             try:
                 valid_username = st.secrets["auth"]["username"]
                 valid_password = st.secrets["auth"]["password"]
-
+                
                 if input_username == valid_username and input_password == valid_password:
                     st.session_state.authenticated = True
                     st.rerun()
@@ -37,62 +36,108 @@ def check_password():
     return True
 
 if check_password():
+    # --- GET CURRENT DATE FOR AUTOMATIC SELECTION ---
+    current_time = datetime.now()
+    current_year = current_time.year
+    current_month_index = current_time.month - 1  # Jan is 1, so index is 0
+    
+    months_list = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
     # --- MAIN DASHBOARD ---
-    st.title("📊 Gastos Mensuales")
+    st.title("📊 Panel de Control: Gastos Mensuales del Hogar")
     st.markdown("---")
 
-    # --- SIDEBAR: ADD EXPENSES ---
-    st.sidebar.header("➕ Añadir gasto")
+    # --- SIDEBAR: DYNAMIC EXPENSE INPUT (NO FORM FOR REAL-TIME REACTIVITY) ---
+    st.sidebar.header("➕ Añadir Nuevo Gasto")
+    
+    # Automatic date detection
+    expense_year = st.sidebar.number_input("Año", min_value=2020, max_value=2035, value=current_year)
+    expense_month = st.sidebar.selectbox("Mes", months_list, index=current_month_index)
+    
+    expense_category = st.sidebar.selectbox("Categoría", ["Suministros", "Telecomunicaciones", "Suscripciones", "Alimentación", "Otros"])
+    
+    # Smart predefined concepts based on category
+    concept_presets = {
+        "Suministros": ["Luz", "Agua", "Gas", "Otro (Personalizado)"],
+        "Telecomunicaciones": ["Internet/Móvil", "Teléfono Fijo", "Otro (Personalizado)"],
+        "Suscripciones": ["Netflix", "Amazon Prime", "Spotify", "Disney+", "HBO Max", "Otro (Personalizado)"],
+        "Alimentación": ["Supermercado", "Restaurantes", "Otro (Personalizado)"],
+        "Otros": ["Varios", "Otro (Personalizado)"]
+    }
+    
+    selected_preset = st.sidebar.selectbox("Concepto", concept_presets[expense_category])
+    
+    # Conditional Text Input for Custom Concepts
+    if selected_preset == "Otro (Personalizado)":
+        expense_item = st.sidebar.text_input("Escribe el concepto personalizado:")
+    else:
+        expense_item = selected_preset
 
-    with st.sidebar.form("expense_form", clear_on_submit=True):
-        expense_year = st.number_input("Año", min_value=2020, max_value=2035, value=datetime.now().year)
-        expense_month = st.selectbox("Mes", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-        expense_category = st.selectbox("Categoría", ["Suministros", "Telecomunicaciones", "Suscripciones", "Alimentación", "Otros"])
-        expense_item = st.text_input("Concepto (ej. Luz, Netflix, Supermercado)")
-        expense_period = st.text_input("Periodo (ej. Mayo, 01/05-31/05)")
+    # Check if the expense requires utility metrics (Luz, Agua, Gas)
+    is_utility = expense_item in ["Luz", "Agua", "Gas"]
+    
+    expense_period = ""
+    expense_consumption = 0.0
+    expense_unit_price = 0.0
+    fixed_cost = 0.0
 
-        st.markdown("**Solo para Suministros (Opcional):**")
-        expense_consumption = st.number_input("Consumo (kWh o m³)", min_value=0.0, step=0.1, value=0.0)
-        expense_unit_price = st.number_input("Precio por unidad (€)", min_value=0.0, step=0.001, value=0.0, format="%.4f")
+    # Dynamic fields exclusively for Utilities
+    if is_utility:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("📅 **Periodo del Suministro**")
+        col_date1, col_date2 = st.sidebar.columns(2)
+        with col_date1:
+            start_date = st.date_input("Inicio", value=current_time)
+        with col_date2:
+            end_date = st.date_input("Fin", value=current_time)
         
-        st.markdown("**Coste Fijo o Total:**")
-        fixed_cost = st.number_input("Coste Total (€) *Si se calcula por consumo, dejar en 0*", min_value=0.0, step=0.01, value=0.0)
+        expense_period = f"{start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}"
         
-        submit_button = st.form_submit_button("Guardar Gasto")
+        st.sidebar.markdown("⚡ **Métricas de Consumo**")
+        expense_consumption = st.sidebar.number_input("Consumo (kWh o m³)", min_value=0.0, step=0.1, value=0.0)
+        expense_unit_price = st.sidebar.number_input("Precio por unidad (€)", min_value=0.0, step=0.001, value=0.0, format="%.4f")
         
-        if submit_button:
-            final_cost = fixed_cost if fixed_cost > 0 else (expense_consumption * expense_unit_price)
-            
-            if expense_item == "":
-                st.sidebar.error("El concepto es obligatorio")
-            elif final_cost == 0:
-                st.sidebar.error("El coste debe ser mayor que 0")
-            else:
-                # Insert into Supabase
-                with conn.session as s:
-                    s.execute(
-                        text("""
-                            INSERT INTO expenses (year, month, category, item, period, consumption, unit_price, cost)
-                            VALUES (:year, :month, :category, :item, :period, :consumption, :unit_price, :cost)
-                        """),
-                        {
-                            "year": expense_year, "month": expense_month, "category": expense_category, 
-                            "item": expense_item, "period": expense_period, 
-                            "consumption": expense_consumption if expense_consumption > 0 else None, 
-                            "unit_price": expense_unit_price if expense_unit_price > 0 else None, 
-                            "cost": final_cost
-                        }
-                    )
-                    s.commit()
-                st.sidebar.success("¡Gasto guardado correctamente!")
-                st.rerun()
+        # Auto-calculate cost but let user override it if needed
+        calculated_utility_cost = expense_consumption * expense_unit_price
+        final_cost = st.sidebar.number_input("Coste Total (€)", min_value=0.0, step=0.01, value=calculated_utility_cost)
+    else:
+        # Standard flat cost for regular items
+        final_cost = st.sidebar.number_input("Coste Total (€)", min_value=0.0, step=0.01, value=0.0)
+        expense_period = expense_month
+
+    # Submit Button Action
+    save_button = st.sidebar.button("Guardar Gasto", use_container_width=True)
+    
+    if save_button:
+        if expense_item.strip() == "":
+            st.sidebar.error("El concepto no puede estar vacío.")
+        elif final_cost <= 0:
+            st.sidebar.error("El coste debe ser mayor que 0 €.")
+        else:
+            # Insert data safely into Supabase
+            with conn.session as session:
+                session.execute(
+                    text("""
+                        INSERT INTO expenses (year, month, category, item, period, consumption, unit_price, cost)
+                        VALUES (:year, :month, :category, :item, :period, :consumption, :unit_price, :cost)
+                    """),
+                    {
+                        "year": expense_year, "month": expense_month, "category": expense_category, 
+                        "item": expense_item, "period": expense_period, 
+                        "consumption": expense_consumption if expense_consumption > 0 else None, 
+                        "unit_price": expense_unit_price if expense_unit_price > 0 else None, 
+                        "cost": final_cost
+                    }
+                )
+                session.commit()
+            st.sidebar.success(f"¡{expense_item} guardado con éxito!")
+            st.rerun()
 
     # --- DATA RETRIEVAL ---
-    # ttl=0 ensures it always fetches fresh data from the database
     try:
         df = conn.query("SELECT * FROM expenses", ttl=0)
-    except Exception as e:
-        st.error(f"Error conectando a la base de datos: {e}")
+    except Exception as database_error:
+        st.error(f"Error conectando a la base de datos: {database_error}")
         st.stop()
 
     if df.empty:
@@ -100,35 +145,42 @@ if check_password():
     else:
         # --- GLOBAL FILTERS ---
         st.subheader("🔍 Filtros de Visualización")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
+        col_filter1, col_filter2 = st.columns(2)
+        
+        with col_filter1:
             available_years = sorted(df["year"].unique())
-            selected_year = st.selectbox("Selecciona el Año", available_years, index=len(available_years)-1)
-        with col_f2:
+            # Default to current year if exists, otherwise the last available year
+            default_year_index = available_years.index(current_year) if current_year in available_years else len(available_years) - 1
+            selected_year = st.selectbox("Selecciona el Año", available_years, index=default_year_index)
+            
+        with col_filter2:
             available_months = df[df["year"] == selected_year]["month"].unique()
-            selected_month = st.selectbox("Selecciona el Mes", available_months)
+            # Default to current month if available in the filtered year data
+            default_month_name = months_list[current_month_index]
+            default_month_index = list(available_months).index(default_month_name) if default_month_name in available_months else 0
+            selected_month = st.selectbox("Selecciona el Mes", available_months, index=default_month_index)
 
         filtered_df = df[(df["year"] == selected_year) & (df["month"] == selected_month)]
         year_df = df[df["year"] == selected_year]
 
         # --- KPI METRICS ---
         st.markdown("### 📈 Resumen Financiero")
-        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         
         monthly_total = filtered_df["cost"].sum()
         yearly_total = year_df["cost"].sum()
         most_expensive_category = filtered_df.groupby("category")["cost"].sum().idxmax() if not filtered_df.empty else "N/A"
         
-        kpi1.metric(label=f"Total Gastos ({selected_month} {selected_year})", value=f"{monthly_total:,.2f} €")
-        kpi2.metric(label=f"Total Acumulado Año ({selected_year})", value=f"{yearly_total:,.2f} €")
-        kpi3.metric(label="Categoría de Mayor Gasto (Mes)", value=most_expensive_category)
+        kpi_col1.metric(label=f"Total Gastos ({selected_month} {selected_year})", value=f"{monthly_total:,.2f} €")
+        kpi_col2.metric(label=f"Total Acumulado Año ({selected_year})", value=f"{yearly_total:,.2f} €")
+        kpi_col3.metric(label="Categoría de Mayor Gasto (Mes)", value=most_expensive_category)
 
         st.markdown("---")
 
         # --- STATISTICS AND CHARTS ---
-        col_g1, col_g2 = st.columns(2)
+        chart_col1, chart_col2 = st.columns(2)
 
-        with col_g1:
+        with chart_col1:
             st.markdown(f"#### 🍰 Distribución por Categoría ({selected_month})")
             if not filtered_df.empty:
                 pie_chart = px.pie(filtered_df, values="cost", names="category", hole=0.4,
@@ -138,12 +190,11 @@ if check_password():
             else:
                 st.info("No hay datos para mostrar gráficos en este mes.")
 
-        with col_g2:
+        with chart_col2:
             st.markdown(f"#### 📊 Histórico Mensual del Año ({selected_year})")
             if not year_df.empty:
-                month_order = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
                 historical_df = year_df.groupby(["month", "category"])["cost"].sum().reset_index()
-                historical_df["month"] = pd.Categorical(historical_df["month"], categories=month_order, ordered=True)
+                historical_df["month"] = pd.Categorical(historical_df["month"], categories=months_list, ordered=True)
                 historical_df = historical_df.sort_values("month")
                 
                 bar_chart = px.bar(historical_df, x="month", y="cost", color="category", barmode="stack",
@@ -168,9 +219,9 @@ if check_password():
             })
             
             st.dataframe(display_df.style.format({
-                "Consumo (kWh/m³)": "{:,.1f}",
-                "Precio Unitario (€)": "{:,.4f}",
-                "Coste Total (€)": "{:,.2f} €"
+                "Consumo (kWh/m³)": lambda val: f"{val:,.1f}" if pd.notnull(val) else "-",
+                "Precio Unitario (€)": lambda val: f"{val:,.4f}" if pd.notnull(val) else "-",
+                "Coste Total (€)": lambda val: f"{val:,.2f} €" if pd.notnull(val) else "0.00 €"
             }), use_container_width=True)
 
             # --- DELETE RECORDS ---
@@ -178,13 +229,13 @@ if check_password():
             record_to_delete = st.selectbox("Selecciona un concepto para eliminar (si es necesario)", filtered_df["item"].unique())
             
             if st.button("Eliminar Registro"):
-                with conn.session as s:
-                    s.execute(
+                with conn.session as session:
+                    session.execute(
                         text("DELETE FROM expenses WHERE year=:year AND month=:month AND item=:item"),
                         {"year": selected_year, "month": selected_month, "item": record_to_delete}
                     )
-                    s.commit()
-                st.success(f"Registro '{record_to_delete}' eliminado.")
+                    session.commit()
+                st.success(f"Registro '{record_to_delete}' eliminado correctamente.")
                 st.rerun()
         else:
              st.info("No hay registros detallados en este mes.")
