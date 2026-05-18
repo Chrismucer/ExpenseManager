@@ -16,16 +16,16 @@ def check_password():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.subheader("🔒 Acceso al Sistema de Gastos")
+        st.subheader("🔒 Acceso")
         input_username = st.text_input("Usuario")
         input_password = st.text_input("Contraseña", type="password")
-        
+
         if st.button("Iniciar Sesión"):
             # Reading credentials securely from Streamlit Cloud Secrets
             try:
                 valid_username = st.secrets["auth"]["username"]
                 valid_password = st.secrets["auth"]["password"]
-                
+
                 if input_username == valid_username and input_password == valid_password:
                     st.session_state.authenticated = True
                     st.rerun()
@@ -38,19 +38,19 @@ def check_password():
 
 if check_password():
     # --- MAIN DASHBOARD ---
-    st.title("📊 Panel de Control: Gastos Mensuales del Hogar")
+    st.title("📊 Gastos Mensuales")
     st.markdown("---")
 
     # --- SIDEBAR: ADD EXPENSES ---
-    st.sidebar.header("➕ Añadir Nuevo Gasto")
-    
+    st.sidebar.header("➕ Añadir gasto")
+
     with st.sidebar.form("expense_form", clear_on_submit=True):
         expense_year = st.number_input("Año", min_value=2020, max_value=2035, value=datetime.now().year)
         expense_month = st.selectbox("Mes", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
         expense_category = st.selectbox("Categoría", ["Suministros", "Telecomunicaciones", "Suscripciones", "Alimentación", "Otros"])
         expense_item = st.text_input("Concepto (ej. Luz, Netflix, Supermercado)")
         expense_period = st.text_input("Periodo (ej. Mayo, 01/05-31/05)")
-        
+
         st.markdown("**Solo para Suministros (Opcional):**")
         expense_consumption = st.number_input("Consumo (kWh o m³)", min_value=0.0, step=0.1, value=0.0)
         expense_unit_price = st.number_input("Precio por unidad (€)", min_value=0.0, step=0.001, value=0.0, format="%.4f")

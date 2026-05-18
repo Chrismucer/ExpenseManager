@@ -1,4 +1,3 @@
-gastos_hogar.db
 __pycache__/
 .env
-.bdconnection
+.dbconnection
