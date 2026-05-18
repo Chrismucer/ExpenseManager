@@ -16,7 +16,8 @@ def check_password():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.subheader("🔒 Acceso al Sistema de Gastos")
+        # Cambio 3: Texto de acceso
+        st.subheader("🔒 Acceso")
         input_username = st.text_input("Usuario")
         input_password = st.text_input("Contraseña", type="password")
         
@@ -44,19 +45,18 @@ if check_password():
     months_list = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
     # --- MAIN DASHBOARD ---
-    st.title("📊 Panel de Control: Gastos Mensuales del Hogar")
+    # Cambio 2: Título principal
+    st.title("📊 Panel de Control: Gastos Mensuales")
     st.markdown("---")
 
-    # --- SIDEBAR: DYNAMIC EXPENSE INPUT (NO FORM FOR REAL-TIME REACTIVITY) ---
+    # --- SIDEBAR: DYNAMIC EXPENSE INPUT ---
     st.sidebar.header("➕ Añadir Nuevo Gasto")
     
-    # Automatic date detection
     expense_year = st.sidebar.number_input("Año", min_value=2020, max_value=2035, value=current_year)
     expense_month = st.sidebar.selectbox("Mes", months_list, index=current_month_index)
     
     expense_category = st.sidebar.selectbox("Categoría", ["Suministros", "Telecomunicaciones", "Suscripciones", "Alimentación", "Otros"])
     
-    # Smart predefined concepts based on category
     concept_presets = {
         "Suministros": ["Luz", "Agua", "Gas", "Otro (Personalizado)"],
         "Telecomunicaciones": ["Internet/Móvil", "Teléfono Fijo", "Otro (Personalizado)"],
@@ -67,13 +67,11 @@ if check_password():
     
     selected_preset = st.sidebar.selectbox("Concepto", concept_presets[expense_category])
     
-    # Conditional Text Input for Custom Concepts
     if selected_preset == "Otro (Personalizado)":
         expense_item = st.sidebar.text_input("Escribe el concepto personalizado:")
     else:
         expense_item = selected_preset
 
-    # Check if the expense requires utility metrics (Luz, Agua, Gas)
     is_utility = expense_item in ["Luz", "Agua", "Gas"]
     
     expense_period = ""
@@ -81,7 +79,6 @@ if check_password():
     expense_unit_price = 0.0
     fixed_cost = 0.0
 
-    # Dynamic fields exclusively for Utilities
     if is_utility:
         st.sidebar.markdown("---")
         st.sidebar.markdown("📅 **Periodo del Suministro**")
@@ -97,15 +94,12 @@ if check_password():
         expense_consumption = st.sidebar.number_input("Consumo (kWh o m³)", min_value=0.0, step=0.1, value=0.0)
         expense_unit_price = st.sidebar.number_input("Precio por unidad (€)", min_value=0.0, step=0.001, value=0.0, format="%.4f")
         
-        # Auto-calculate cost but let user override it if needed
         calculated_utility_cost = expense_consumption * expense_unit_price
         final_cost = st.sidebar.number_input("Coste Total (€)", min_value=0.0, step=0.01, value=calculated_utility_cost)
     else:
-        # Standard flat cost for regular items
         final_cost = st.sidebar.number_input("Coste Total (€)", min_value=0.0, step=0.01, value=0.0)
         expense_period = expense_month
 
-    # Submit Button Action
     save_button = st.sidebar.button("Guardar Gasto", use_container_width=True)
     
     if save_button:
@@ -114,7 +108,6 @@ if check_password():
         elif final_cost <= 0:
             st.sidebar.error("El coste debe ser mayor que 0 €.")
         else:
-            # Insert data safely into Supabase
             with conn.session as session:
                 session.execute(
                     text("""
@@ -149,13 +142,11 @@ if check_password():
         
         with col_filter1:
             available_years = sorted(df["year"].unique())
-            # Default to current year if exists, otherwise the last available year
             default_year_index = available_years.index(current_year) if current_year in available_years else len(available_years) - 1
             selected_year = st.selectbox("Selecciona el Año", available_years, index=default_year_index)
             
         with col_filter2:
             available_months = df[df["year"] == selected_year]["month"].unique()
-            # Default to current month if available in the filtered year data
             default_month_name = months_list[current_month_index]
             default_month_index = list(available_months).index(default_month_name) if default_month_name in available_months else 0
             selected_month = st.selectbox("Selecciona el Mes", available_months, index=default_month_index)
@@ -228,14 +219,20 @@ if check_password():
             st.markdown("#### 🗑️ Gestionar Registros")
             record_to_delete = st.selectbox("Selecciona un concepto para eliminar (si es necesario)", filtered_df["item"].unique())
             
-            if st.button("Eliminar Registro"):
+            # Cambio 1: Nombre del botón
+            if st.button("Eliminar Gasto"):
                 with conn.session as session:
+                    # Corrección técnica: Convertir los datos a formatos de Python nativos (int y str)
                     session.execute(
                         text("DELETE FROM expenses WHERE year=:year AND month=:month AND item=:item"),
-                        {"year": selected_year, "month": selected_month, "item": record_to_delete}
+                        {
+                            "year": int(selected_year), 
+                            "month": str(selected_month), 
+                            "item": str(record_to_delete)
+                        }
                     )
                     session.commit()
-                st.success(f"Registro '{record_to_delete}' eliminado correctamente.")
+                st.success(f"Gasto '{record_to_delete}' eliminado correctamente.")
                 st.rerun()
         else:
              st.info("No hay registros detallados en este mes.")
