@@ -1,12 +1,12 @@
 """
-app.py — Punto de entrada principal. Orquesta autenticación, datos y UI.
+app.py — Punto de entrada principal.
 
 Estructura del proyecto:
   app.py          → Entrada principal (este archivo)
-  auth.py         → Autenticación segura con anti-fuerza bruta y expiración de sesión
-  database.py     → Capa de acceso a datos (Supabase / SQLAlchemy)
-  config.py       → Constantes: meses, categorías, colores, etc.
-  components.py   → Componentes de UI: dialog añadir gasto, gestión (editar/eliminar)
+  auth.py         → Autenticación segura
+  database.py     → Capa de acceso a datos (gastos + presupuestos)
+  config.py       → Constantes
+  components.py   → Dialogs y componentes UI
   charts.py       → Visualizaciones Plotly
 """
 
@@ -14,11 +14,14 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-from auth import check_password, logout
-from database import load_expenses
+from auth import check_password
+from database import load_expenses, load_budgets, get_budget
 from config import MONTHS
-from components import dialog_add_expense, tab_manage
-from charts import chart_pie, chart_bar_historical, chart_trend_line, chart_category_detail
+from components import dialog_add_expense, dialog_logout, dialog_set_budget, tab_manage
+from charts import (
+    chart_pie, chart_bar_historical, chart_trend_line,
+    chart_category_detail, chart_budget_gauge,
+)
 
 # ---------------------------------------------------------------------------
 # Configuración de página
@@ -50,41 +53,39 @@ li[role="option"][aria-selected="true"] {
     color: #ffffff !important;
 }
 
-/* ── Selectbox: deshabilitar teclado en móvil ────────────────────── */
+/* ── Selectbox: sin teclado en móvil ─────────────────────────────── */
 div[data-baseweb="select"] input {
     caret-color: transparent !important;
     pointer-events: none !important;
 }
 
-/* ── Botón principal: tamaño cómodo para el pulgar ───────────────── */
-div.stButton > button[kind="primary"] {
-    min-height: 48px;
-    font-size: 1rem;
+/* ── Todos los botones: altura mínima cómoda para el pulgar ──────── */
+div.stButton > button {
+    min-height: 44px;
 }
 
-/* ── Métricas: apiladas en móvil ─────────────────────────────────── */
-@media (max-width: 640px) {
-    div[data-testid="column"] {
-        width: 100% !important;
-        flex: 1 1 100% !important;
-        min-width: 100% !important;
-    }
-    button[data-baseweb="tab"] {
-        font-size: 0.78rem !important;
-        padding: 8px 6px !important;
-    }
+/* ── Tabs: más grandes y fáciles de pulsar en móvil ─────────────── */
+button[data-baseweb="tab"] {
+    font-size: 1rem !important;
+    padding: 12px 16px !important;
+    min-height: 52px !important;
+}
+div[data-baseweb="tab-list"] {
+    gap: 4px !important;
 }
 
-/* ── Dialog: ocupa más pantalla en móvil ─────────────────────────── */
+/* ── Dialog: ancho máximo en móvil ───────────────────────────────── */
 div[data-testid="stDialog"] > div {
     max-width: 96vw !important;
     width: 96vw !important;
 }
 
-/* ── Expander cerrar sesión en rojo ──────────────────────────────── */
-div[data-testid="stExpander"] details summary p {
-    color: #EF4444 !important;
-    font-weight: 600;
+/* ── Métricas: 2 columnas siempre (ya lo forzamos en Python) ─────── */
+@media (max-width: 480px) {
+    button[data-baseweb="tab"] {
+        font-size: 0.85rem !important;
+        padding: 10px 8px !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -100,18 +101,55 @@ if not check_password():
 # ---------------------------------------------------------------------------
 now = datetime.now()
 current_year = now.year
-current_month_index = now.month - 1  # 0-based
+current_month_index = now.month - 1
 
 # ---------------------------------------------------------------------------
-# Barra superior: título + botón añadir
+# Barra superior: título + acciones
 # ---------------------------------------------------------------------------
-col_title, col_actions = st.columns([4, 1])
+col_title, col_btn_add, col_btn_budget, col_btn_refresh, col_btn_logout = st.columns(
+    [4, 1, 1, 1, 1]
+)
 with col_title:
     st.title("💰 Gastos del Hogar")
-with col_actions:
+
+with col_btn_add:
     st.markdown("<div style='padding-top:18px'>", unsafe_allow_html=True)
-    if st.button("➕ Añadir", help="Añadir gasto", use_container_width=True, type="primary"):
+    if st.button("➕ Añadir", use_container_width=True, type="primary"):
         dialog_add_expense(current_year, current_month_index)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col_btn_budget:
+    st.markdown("<div style='padding-top:18px'>", unsafe_allow_html=True)
+    if st.button("🎯 Presupuesto", use_container_width=True):
+        budget_now = get_budget(current_year, MONTHS[current_month_index])
+        dialog_set_budget(current_year, current_month_index, budget_now)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col_btn_refresh:
+    st.markdown("<div style='padding-top:18px'>", unsafe_allow_html=True)
+    if st.button("🔄 Actualizar", use_container_width=True):
+        load_expenses.clear()
+        load_budgets.clear()
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col_btn_logout:
+    st.markdown("""
+    <div style='padding-top:18px'>
+    <style>
+    div[data-testid="stHorizontalBlock"] div.stButton:last-child button {
+        background-color: #EF4444 !important;
+        border-color: #EF4444 !important;
+        color: white !important;
+    }
+    div[data-testid="stHorizontalBlock"] div.stButton:last-child button:hover {
+        background-color: #DC2626 !important;
+        border-color: #DC2626 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    if st.button("🚪 Salir", use_container_width=True, key="btn_logout"):
+        dialog_logout()
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("---")
@@ -120,34 +158,14 @@ st.markdown("---")
 # Carga de datos
 # ---------------------------------------------------------------------------
 df = load_expenses()
-
-if st.button("🔄 Actualizar datos", type="secondary"):
-    load_expenses.clear()
-    st.rerun()
-
-# ---------------------------------------------------------------------------
-# Cerrar sesión — siempre visible, independiente de si hay datos
-# ---------------------------------------------------------------------------
-st.markdown("---")
-with st.expander("🚪 Cerrar sesión"):
-    st.warning("¿Seguro que quieres cerrar la sesión? Tendrás que volver a introducir tus credenciales.")
-    col_logout, col_cancel = st.columns(2)
-    with col_logout:
-        if st.button("✅ Sí, cerrar sesión", use_container_width=True, type="primary", key="confirm_logout"):
-            logout()
-            st.rerun()
-    with col_cancel:
-        if st.button("❌ Cancelar", use_container_width=True, key="cancel_logout"):
-            st.rerun()
+budgets_df = load_budgets()
 
 if df.empty:
     st.info("Aún no hay gastos registrados. Pulsa ➕ para añadir el primero.")
     st.stop()
 
-st.markdown("---")
-
 # ---------------------------------------------------------------------------
-# Filtros — ambos selectbox (sin teclado gracias al CSS pointer-events)
+# Filtros
 # ---------------------------------------------------------------------------
 col_f1, col_f2 = st.columns(2)
 
@@ -173,6 +191,9 @@ with col_f2:
 
 filtered_df = year_df[year_df["month"] == selected_month]
 
+# Presupuesto del mes seleccionado
+monthly_budget = get_budget(int(selected_year), selected_month)
+
 # Mes anterior → delta KPI
 prev_month_idx = MONTHS.index(selected_month) - 1
 prev_month_total = 0.0
@@ -182,7 +203,7 @@ if prev_month_idx >= 0:
     prev_month_total = float(prev_df["cost"].sum())
 
 # ---------------------------------------------------------------------------
-# KPIs — 2x2
+# KPIs — 2 filas × 2 columnas (legible en móvil)
 # ---------------------------------------------------------------------------
 st.markdown("### 📈 Resumen")
 
@@ -206,16 +227,35 @@ kpi_r1c2.metric(label=f"Acumulado {selected_year}", value=f"{yearly_total:,.2f} 
 
 kpi_r2c1, kpi_r2c2 = st.columns(2)
 kpi_r2c1.metric(label="Media mensual", value=f"{monthly_avg:,.2f} €")
-kpi_r2c2.metric(label="Mayor categoría", value=top_category)
+
+if monthly_budget:
+    remaining = monthly_budget - monthly_total
+    kpi_r2c2.metric(
+        label="Presupuesto restante",
+        value=f"{remaining:,.2f} €",
+        delta=f"de {monthly_budget:,.2f} € totales",
+        delta_color="off",
+    )
+else:
+    kpi_r2c2.metric(label="Mayor categoría", value=top_category)
 
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# Pestañas principales
+# Pestañas — iconos grandes, fáciles de pulsar en móvil
 # ---------------------------------------------------------------------------
-tab_charts, tab_data, tab_manage_tab = st.tabs(["📊 Gráficos", "📋 Datos", "⚙️ Gestión"])
+tab_charts, tab_data, tab_manage_tab = st.tabs([
+    "📊  Gráficos",
+    "📋  Datos",
+    "⚙️  Gestión",
+])
 
 with tab_charts:
+    # Si hay presupuesto, mostrar gauge arriba del todo
+    if monthly_budget:
+        chart_budget_gauge(monthly_total, monthly_budget, selected_month)
+        st.markdown("---")
+
     c1, c2 = st.columns([1, 1])
     with c1:
         chart_pie(filtered_df, selected_month)
@@ -225,7 +265,7 @@ with tab_charts:
     st.markdown("---")
     c3, c4 = st.columns([1, 1])
     with c3:
-        chart_trend_line(year_df, selected_year)
+        chart_trend_line(year_df, selected_year, budgets_df)
     with c4:
         chart_category_detail(filtered_df, selected_month)
 
@@ -247,13 +287,12 @@ with tab_data:
         })
         st.dataframe(
             display_df.style.format({
-                "Consumo (kWh/m³)":  lambda v: f"{v:,.1f}"   if pd.notnull(v) else "—",
-                "Precio Unit. (€)":  lambda v: f"{v:,.4f} €" if pd.notnull(v) else "—",
-                "Coste (€)":         lambda v: f"{v:,.2f} €" if pd.notnull(v) else "0.00 €",
+                "Consumo (kWh/m³)": lambda v: f"{v:,.1f}"   if pd.notnull(v) else "—",
+                "Precio Unit. (€)": lambda v: f"{v:,.4f} €" if pd.notnull(v) else "—",
+                "Coste (€)":        lambda v: f"{v:,.2f} €" if pd.notnull(v) else "0.00 €",
             }),
             use_container_width=True,
         )
-
         csv = filtered_df.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="⬇️ Descargar CSV",
