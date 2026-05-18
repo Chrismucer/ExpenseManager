@@ -1,5 +1,7 @@
 """
 components.py — Componentes reutilizables de la interfaz de usuario.
+  - dialog_add_expense()  → modal para añadir gasto (óptimo para móvil)
+  - tab_manage()          → pestaña de edición y borrado
 """
 
 import streamlit as st
@@ -10,26 +12,30 @@ from database import save_expense, update_expense, delete_expense
 
 
 # ---------------------------------------------------------------------------
-# SIDEBAR: Añadir gasto
+# DIALOG: Añadir gasto (reemplaza el sidebar)
 # ---------------------------------------------------------------------------
 
-def sidebar_add_expense(current_year: int, current_month_index: int) -> None:
-    """Renderiza el formulario lateral para añadir un nuevo gasto."""
-    st.sidebar.header("➕ Añadir Gasto")
+@st.dialog("➕ Añadir Gasto", width="large")
+def dialog_add_expense(current_year: int, current_month_index: int) -> None:
+    """Modal para añadir un nuevo gasto. Funciona bien en móvil y escritorio."""
 
-    expense_year = st.sidebar.number_input(
-        "Año", min_value=2020, max_value=2035, value=current_year
-    )
-    expense_month = st.sidebar.selectbox(
-        "Mes", MONTHS, index=current_month_index
-    )
-    expense_category = st.sidebar.selectbox("Categoría", CATEGORIES)
+    col1, col2 = st.columns(2)
+    with col1:
+        expense_year = st.number_input(
+            "Año", min_value=2020, max_value=2035, value=current_year
+        )
+    with col2:
+        expense_month = st.selectbox("Mes", MONTHS, index=current_month_index)
 
-    presets = CONCEPT_PRESETS[expense_category]
-    selected_preset = st.sidebar.selectbox("Concepto", presets)
+    col3, col4 = st.columns(2)
+    with col3:
+        expense_category = st.selectbox("Categoría", CATEGORIES)
+    with col4:
+        presets = CONCEPT_PRESETS[expense_category]
+        selected_preset = st.selectbox("Concepto", presets)
 
     if selected_preset == "Otro (Personalizado)":
-        expense_item = st.sidebar.text_input("Concepto personalizado:")
+        expense_item = st.text_input("Concepto personalizado")
     else:
         expense_item = selected_preset
 
@@ -39,38 +45,42 @@ def sidebar_add_expense(current_year: int, current_month_index: int) -> None:
     expense_unit_price: float | None = None
 
     if is_utility:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("📅 **Periodo del Suministro**")
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            start_date = st.date_input("Inicio", value=datetime.now(), key="add_start")
-        with col2:
-            end_date = st.date_input("Fin", value=datetime.now(), key="add_end")
+        st.markdown("---")
+        st.markdown("📅 **Periodo del Suministro**")
+        col5, col6 = st.columns(2)
+        with col5:
+            start_date = st.date_input("Inicio", value=datetime.now(), key="dlg_start")
+        with col6:
+            end_date = st.date_input("Fin", value=datetime.now(), key="dlg_end")
         expense_period = f"{start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}"
 
-        st.sidebar.markdown("⚡ **Métricas de Consumo**")
-        expense_consumption = st.sidebar.number_input(
-            "Consumo (kWh o m³)", min_value=0.0, step=0.1, value=0.0
-        )
-        expense_unit_price = st.sidebar.number_input(
-            "Precio por unidad (€)", min_value=0.0, step=0.001, value=0.0, format="%.4f"
-        )
-        suggested = round(expense_consumption * expense_unit_price, 2)
-        final_cost = st.sidebar.number_input(
+        st.markdown("⚡ **Métricas de Consumo**")
+        col7, col8 = st.columns(2)
+        with col7:
+            expense_consumption = st.number_input(
+                "Consumo (kWh o m³)", min_value=0.0, step=0.1, value=0.0
+            )
+        with col8:
+            expense_unit_price = st.number_input(
+                "Precio por unidad (€)", min_value=0.0, step=0.001,
+                value=0.0, format="%.4f"
+            )
+        suggested = round((expense_consumption or 0.0) * (expense_unit_price or 0.0), 2)
+        final_cost = st.number_input(
             "Coste Total (€)", min_value=0.0, step=0.01, value=suggested
         )
     else:
-        final_cost = st.sidebar.number_input(
+        final_cost = st.number_input(
             "Coste Total (€)", min_value=0.0, step=0.01, value=0.0
         )
         expense_period = expense_month
 
-    st.sidebar.markdown("---")
-    if st.sidebar.button("💾 Guardar Gasto", use_container_width=True, type="primary"):
-        if not expense_item or expense_item.strip() == "":
-            st.sidebar.error("El concepto no puede estar vacío.")
+    st.markdown("")
+    if st.button("💾 Guardar Gasto", type="primary", use_container_width=True):
+        if not expense_item or not expense_item.strip():
+            st.error("El concepto no puede estar vacío.")
         elif final_cost <= 0:
-            st.sidebar.error("El coste debe ser mayor que 0 €.")
+            st.error("El coste debe ser mayor que 0 €.")
         else:
             ok = save_expense(
                 year=int(expense_year),
@@ -83,7 +93,7 @@ def sidebar_add_expense(current_year: int, current_month_index: int) -> None:
                 cost=final_cost,
             )
             if ok:
-                st.sidebar.success(f"✅ '{expense_item}' guardado con éxito.")
+                st.success(f"✅ '{expense_item}' guardado con éxito.")
                 st.rerun()
 
 
@@ -92,29 +102,32 @@ def sidebar_add_expense(current_year: int, current_month_index: int) -> None:
 # ---------------------------------------------------------------------------
 
 def tab_manage(filtered_df: pd.DataFrame) -> None:
-    """Renderiza la pestaña de gestión: editar y eliminar registros."""
+    """Pestaña de gestión: editar y eliminar registros."""
     if filtered_df.empty:
         st.info("No hay registros en este mes para gestionar.")
         return
 
-    # ---- Eliminar -------------------------------------------------------
-    st.markdown("### 🗑️ Eliminar Gasto")
-    st.caption("Se usa el ID único de cada registro — nunca se borrará más de un gasto a la vez.")
-
-    # Mapa label → id para el selectbox
+    # Mapa label → id
     labels = {
-        f"[{row['id']}] {row['item']} — {row['cost']:.2f} €": row["id"]
+        f"[{row['id']}]  {row['item']}  —  {row['cost']:.2f} €": row["id"]
         for _, row in filtered_df.iterrows()
     }
+
+    # ---- Eliminar -------------------------------------------------------
+    st.markdown("### 🗑️ Eliminar Gasto")
+    st.caption("Cada registro se identifica por su ID único — nunca se borrará más de uno a la vez.")
+
     selected_label = st.selectbox("Selecciona el gasto a eliminar", list(labels.keys()))
     selected_id = labels[selected_label]
 
-    # Botón → confirmación en 2 pasos
     if st.button("🗑️ Eliminar", type="secondary"):
         st.session_state["pending_delete_id"] = selected_id
         st.session_state["pending_delete_label"] = selected_label
 
-    if st.session_state.get("pending_delete_id") == selected_id and "pending_delete_label" in st.session_state:
+    if (
+        st.session_state.get("pending_delete_id") == selected_id
+        and "pending_delete_label" in st.session_state
+    ):
         st.warning(f"¿Seguro que quieres eliminar **{st.session_state['pending_delete_label']}**?")
         col_yes, col_no = st.columns(2)
         with col_yes:
@@ -136,9 +149,7 @@ def tab_manage(filtered_df: pd.DataFrame) -> None:
     st.markdown("### ✏️ Editar Gasto Existente")
 
     edit_label = st.selectbox(
-        "Selecciona el gasto a editar",
-        list(labels.keys()),
-        key="edit_select",
+        "Selecciona el gasto a editar", list(labels.keys()), key="edit_select"
     )
     edit_id = labels[edit_label]
     row = filtered_df[filtered_df["id"] == edit_id].iloc[0]
@@ -153,13 +164,16 @@ def tab_manage(filtered_df: pd.DataFrame) -> None:
             )
             new_item = st.text_input("Concepto", value=row["item"])
         with col2:
-            new_cost = st.number_input("Coste Total (€)", min_value=0.0, step=0.01, value=float(row["cost"]))
-            new_period = st.text_input("Periodo", value=str(row["period"]) if pd.notnull(row["period"]) else "")
+            new_cost = st.number_input(
+                "Coste Total (€)", min_value=0.0, step=0.01, value=float(row["cost"])
+            )
+            new_period = st.text_input(
+                "Periodo", value=str(row["period"]) if pd.notnull(row["period"]) else ""
+            )
 
-        is_utility = row["item"] in UTILITY_ITEMS
         new_consumption: float | None = None
         new_unit_price: float | None = None
-        if is_utility:
+        if row["item"] in UTILITY_ITEMS:
             col3, col4 = st.columns(2)
             with col3:
                 new_consumption = st.number_input(
@@ -172,7 +186,9 @@ def tab_manage(filtered_df: pd.DataFrame) -> None:
                     value=float(row["unit_price"]) if pd.notnull(row["unit_price"]) else 0.0,
                 )
 
-        submitted = st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True)
+        submitted = st.form_submit_button(
+            "💾 Guardar Cambios", type="primary", use_container_width=True
+        )
         if submitted:
             if not new_item.strip():
                 st.error("El concepto no puede estar vacío.")
@@ -188,5 +204,5 @@ def tab_manage(filtered_df: pd.DataFrame) -> None:
                     unit_price=new_unit_price,
                     cost=new_cost,
                 ):
-                    st.success(f"✅ Gasto actualizado correctamente.")
+                    st.success("✅ Gasto actualizado correctamente.")
                     st.rerun()
